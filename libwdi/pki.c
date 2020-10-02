@@ -1083,12 +1083,11 @@ out:
 /*
  * Add a new member to a cat file, containing the hash for the relevant file
  */
-static BOOL AddFileHash(HANDLE hCat, LPCSTR szFileName, BYTE* pbFileHash)
+static BOOL AddFileHash(HANDLE hCat, LPCSTR szFileName, BYTE* pbFileHash, LPCWSTR wszOSAttr)
 {
 	const GUID inf_guid = {0xDE351A42, 0x8E59, 0x11D0, {0x8C, 0x47, 0x00, 0xC0, 0x4F, 0xC2, 0x95, 0xEE}};
 	const GUID pe_guid = {0xC689AAB8, 0x8E78, 0x11D0, {0x8C, 0x47, 0x00, 0xC0, 0x4F, 0xC2, 0x95, 0xEE}};
 	const BYTE fImageData = 0xA0;		// Flags used for the SPC_PE_IMAGE_DATA "<<<Obsolete>>>" link
-	LPCWSTR wszOSAttr = L"2:5.1,2:5.2,2:6.0,2:6.1";
 
 	PF_DECL_LOAD_LIBRARY(WinTrust);
 	PF_DECL_LOAD_LIBRARY(Crypt32);
@@ -1145,7 +1144,7 @@ static BOOL AddFileHash(HANDLE hCat, LPCSTR szFileName, BYTE* pbFileHash)
 
 	// An "<<<Obsolete>>>" Authenticode link must be populated for each entry
 	sSPCLink.dwLinkChoice = SPC_FILE_LINK_CHOICE;
-	sSPCLink.pwszUrl = L"<<<Obsolete>>>";
+	sSPCLink.pwszUrl = L""; // "<<<Obsolete>>>";
 	cbEncoded = sizeof(pbEncoded);
 	// PE and INF encode the link differently
 	if (bPEType) {
@@ -1232,7 +1231,7 @@ static BOOL GetFullPath(LPCSTR szSrc, LPSTR szDst, DWORD dwDstSize)
 
 // Modified from http://www.zemris.fer.hr/predmeti/os1/misc/Unix2Win.htm
 static CHAR szInitialDir[MAX_PATH];		// We need a global variable
-static void ScanDirAndHash(HANDLE hCat, LPCSTR szDirName, LPSTR* szFileList, DWORD cFileList)
+static void ScanDirAndHash(HANDLE hCat, LPCSTR szDirName, LPSTR* szFileList, DWORD cFileList, LPCWSTR wszOSAttr)
 {
 	CHAR szDir[MAX_PATH+1];
 	CHAR szSubDir[MAX_PATH+1];
@@ -1271,7 +1270,7 @@ static void ScanDirAndHash(HANDLE hCat, LPCSTR szDirName, LPSTR* szFileList, DWO
 					return;
 				}
 				static_sprintf(szSubDir, "%s%c%s", szDirName, '\\', szEntry);
-				ScanDirAndHash(hCat, szSubDir, szFileList, cFileList);
+				ScanDirAndHash(hCat, szSubDir, szFileList, cFileList, wszOSAttr);
 			}
 		} else {
 			for (i=0; i<cFileList; i++) {
@@ -1279,7 +1278,7 @@ static void ScanDirAndHash(HANDLE hCat, LPCSTR szDirName, LPSTR* szFileList, DWO
 				if (strcmp(szEntry, szFileList[i]) == 0) {
 					static_sprintf(szFilePath, "%s%s%c%s", szInitialDir, szDirName, '\\', szEntry);
 					// TODO: check return value
-					if ( (CalcHash(pbHash, szFilePath)) && AddFileHash(hCat, szEntry, pbHash) ) {
+					if ( (CalcHash(pbHash, szFilePath)) && AddFileHash(hCat, szEntry, pbHash, wszOSAttr) ) {
 						wdi_info("added hash for '%s'",  szFilePath);
 					} else {
 						wdi_warn("could not add hash for '%s' - ignored", szFilePath);
@@ -1297,7 +1296,7 @@ static void ScanDirAndHash(HANDLE hCat, LPCSTR szDirName, LPSTR* szFileList, DWO
  * Create a cat file for driver package signing, and add any listed matching file found in the
  * szSearchDir directory
  */
-BOOL CreateCat(LPCSTR szCatPath, LPCSTR szHWID, LPCSTR szSearchDir, LPCSTR* szFileList, DWORD cFileList)
+BOOL CreateCatEx(LPCSTR szCatPath, LPCSTR szHWID, LPCSTR szSearchDir, LPCSTR* szFileList, DWORD cFileList, LPCWSTR wszOS, LPCWSTR wszOSAttr)
 {
 	PF_DECL_LOAD_LIBRARY(WinTrust);
 	PF_DECL(CryptCATOpen);
@@ -1312,8 +1311,6 @@ BOOL CreateCat(LPCSTR szCatPath, LPCSTR szHWID, LPCSTR szSearchDir, LPCSTR* szFi
 	DWORD i;
 	LPWSTR wszCatPath = NULL;
 	LPWSTR wszHWID = NULL;
-	// From the inf2cat /os parameter - doesn't seem to be used by the OS though...
-	LPCWSTR wszOS = L"7_X86,7_X64,8_X86,8_X64,8_ARM,10_X86,10_X64,10_ARM";
 	LPSTR * szLocalFileList;
 
 	PF_INIT_OR_OUT(CryptCATOpen, WinTrust);
@@ -1365,7 +1362,7 @@ BOOL CreateCat(LPCSTR szCatPath, LPCSTR szHWID, LPCSTR szSearchDir, LPCSTR* szFi
 		else
 			_strlwr(szLocalFileList[i]);
 	}
-	ScanDirAndHash(hCat, "", szLocalFileList, cFileList);
+	ScanDirAndHash(hCat, "", szLocalFileList, cFileList, wszOSAttr);
 	for (i=0; i<cFileList; i++){
 		free(szLocalFileList[i]);
 	}
@@ -1387,4 +1384,14 @@ out:
 		pfCryptCATClose(hCat);
 	PF_FREE_LIBRARY(WinTrust);
 	return r;
+}
+
+BOOL CreateCat(LPCSTR szCatPath, LPCSTR szHWID, LPCSTR szSearchDir, LPCSTR* szFileList, DWORD cFileList)
+{
+	// From the inf2cat /os parameter - doesn't seem to be used by the OS though...
+	LPCWSTR wszOS = L"7_X86,7_X64,8_X86,8_X64,8_ARM,10_X86,10_X64,10_ARM";
+	LPCWSTR wszOSAttr = L"2:5.1,2:5.2,2:6.0,2:6.1";
+
+	return CreateCatEx(szCatPath, szHWID, szSearchDir, szFileList,
+			   cFileList, wszOS, wszOSAttr);
 }
