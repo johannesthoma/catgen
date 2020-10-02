@@ -41,13 +41,18 @@
 
 #include "installer.h"
 #include "libwdi.h"
+#ifndef CONFIG_CATGEN
 #include "libwdi_i.h"
+#endif	/* TARGET_CATGEN */
 #include "logging.h"
 #include "tokenizer.h"
+#ifndef CONFIG_CATGEN
 #include "embedded.h"	// auto-generated during compilation
+#endif	/* TARGET_CATGEN */
 #include "msapi_utf8.h"
 #include "stdfn.h"
 
+#ifndef CONFIG_CATGEN
 // Global variables
 static struct wdi_device_info *current_device = NULL;
 static BOOL filter_driver = FALSE;
@@ -58,6 +63,7 @@ static const char* driver_name[WDI_NB_DRIVERS-1] = {"winusbcoinstaller2.dll", "l
 static const char* inf_template[WDI_NB_DRIVERS-1] = {"winusb.inf.in", "libusb0.inf.in", "libusbk.inf.in", "usbser.inf.in"};
 static const char* cat_template[WDI_NB_DRIVERS-1] = {"winusb.cat.in", "libusb0.cat.in", "libusbk.cat.in", "usbser.cat.in"};
 static const char* ms_compat_id[WDI_NB_DRIVERS-1] = {"MS_COMP_WINUSB", "MS_COMP_LIBUSB0", "MS_COMP_LIBUSBK", "MS_COMP_USBSER"};
+#endif	/* CONFIG_CATGEN */
 int nWindowsVersion = WINDOWS_UNDEFINED;
 char WindowsVersionStr[128] = "Windows ";
 
@@ -219,6 +225,7 @@ static char err_string[STR_BUFFER_SIZE];
 }
 
 
+#ifndef CONFIG_CATGEN
 // Retrieve the SID of the current user. The returned PSID must be freed by the caller using LocalFree()
 static PSID GetSid(void) {
 	TOKEN_USER* tu = NULL;
@@ -1803,3 +1810,4 @@ int LIBWDI_API wdi_get_wdf_version(void)
 	return -1;
 #endif
 }
+#endif	/* CONFIG_CATGEN */
