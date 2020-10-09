@@ -1324,8 +1324,6 @@ BOOL CreateCatEx(LPCSTR szCatPath, LPCSTR szHWID, LPCSTR szSearchDir, LPCSTR* sz
 		goto out;
 	}
 	wszCatPath = UTF8toWCHAR(szCatPath);
-	wszHWID = UTF8toWCHAR(szHWID);
-	_wcslwr(wszHWID);	// Most of the cat strings are converted to lowercase
 	hCat= pfCryptCATOpen(wszCatPath, CRYPTCAT_OPEN_CREATENEW, hProv, 0, 0);
 	if (hCat == INVALID_HANDLE_VALUE) {
 		wdi_warn("Unable to create file '%s': %s", szCatPath, winpki_error_str(0));
@@ -1333,10 +1331,14 @@ BOOL CreateCatEx(LPCSTR szCatPath, LPCSTR szHWID, LPCSTR szSearchDir, LPCSTR* sz
 	}
 
 	// Setup the general Cat attributes
-	if (pfCryptCATPutCatAttrInfo(hCat, L"HWID1", CRYPTCAT_ATTR_AUTHENTICATED|CRYPTCAT_ATTR_NAMEASCII|CRYPTCAT_ATTR_DATAASCII,
-		2*((DWORD)wcslen(wszHWID)+1), (BYTE*)wszHWID) ==  NULL) {
-		wdi_warn("Failed to set HWID1 cat attribute: %s", winpki_error_str(0));
-		goto out;
+	if (szHWID) {
+		wszHWID = UTF8toWCHAR(szHWID);
+		_wcslwr(wszHWID);	// Most of the cat strings are converted to lowercase
+		if (pfCryptCATPutCatAttrInfo(hCat, L"HWID1", CRYPTCAT_ATTR_AUTHENTICATED|CRYPTCAT_ATTR_NAMEASCII|CRYPTCAT_ATTR_DATAASCII,
+					     2*((DWORD)wcslen(wszHWID)+1), (BYTE*)wszHWID) ==  NULL) {
+			wdi_warn("Failed to set HWID1 cat attribute: %s", winpki_error_str(0));
+			goto out;
+		}
 	}
 	if (pfCryptCATPutCatAttrInfo(hCat, L"OS", CRYPTCAT_ATTR_AUTHENTICATED|CRYPTCAT_ATTR_NAMEASCII|CRYPTCAT_ATTR_DATAASCII,
 		2*((DWORD)wcslen(wszOS)+1), (BYTE*)wszOS) == NULL) {
