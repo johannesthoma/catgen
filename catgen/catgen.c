@@ -129,8 +129,10 @@ main(int argc, char **argv)
 	}
 
 	ret = parse_inf(p, cat_list, &nb_entries, &hw_id);
-	if (!ret)
+	if (!ret) {
 	    errx_msg("parse inf failed");
+	    return 1;
+	}
     }
 
     while (optind < argc) {
@@ -149,8 +151,10 @@ main(int argc, char **argv)
 
     ret = CreateCatEx(cat_path, hw_id, drv_path, cat_list, nb_entries,
 		      wszOS, wszOSAttr);
-    if (!ret)
+    if (!ret) {
 	errx_msg("CreateCat failed");
+	return 1;
+    }
 
     return 0;
 }
