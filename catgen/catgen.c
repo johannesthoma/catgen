@@ -367,7 +367,7 @@ parse_inf(char *inf_name, const char **cat_list, unsigned int *cat_list_idx,
 				continue;
 			    do {
 				cat_list[*cat_list_idx] =
-				    _wide_to_utf8(pSetupGetField(&c_files, 0));
+				    _wide_to_utf8(pSetupGetField(&c_files, 1));
 				verbose_msg("cat_list[%d] = %s", *cat_list_idx,
 					    cat_list[*cat_list_idx]);
 				(*cat_list_idx)++;
