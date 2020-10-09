@@ -256,6 +256,8 @@ parse_inf(char *inf_name, const char **cat_list, unsigned int *cat_list_idx,
 {
     BOOL ret;
     WCHAR bufW[MAX_PATH];
+    const WCHAR **inst = NULL;
+    int nr_inst = 0;
     HINF hinf;
     int rc = 0;
 
@@ -274,112 +276,123 @@ parse_inf(char *inf_name, const char **cat_list, unsigned int *cat_list_idx,
 	exit (1);
     }
 
-    INFCONTEXT c_man;
-    ret = SetupFindFirstLineW(hinf, L"Manufacturer", NULL, &c_man);
-    if (!ret) {
-	errx_msg("empty Manufacturer section");
+    inst = realloc(inst, (nr_inst + 1) * sizeof(WCHAR *));
+    if (!inst) {
+	err_msg("realloc(%d * sizeof(WCHAR *))", nr_inst + 1);
 	goto out;
     }
+    inst[nr_inst++] = L"DefaultInstall";
 
-    do {
-	int fc = SetupGetFieldCount(&c_man);
-	int f = 1;
+    INFCONTEXT c_man;
+    ret = SetupFindFirstLineW(hinf, L"Manufacturer", NULL, &c_man);
+    if (ret)
+	do {
+	    int fc = SetupGetFieldCount(&c_man);
+	    int f = 1;
 
-	const WCHAR *models_section_name = pSetupGetField(&c_man, f);
-	verbose_msg("models section name %S", models_section_name);
-	if (f < fc)
-	    f++;
+	    const WCHAR *models_section_name = pSetupGetField(&c_man, f);
+	    verbose_msg("models section name %S", models_section_name);
+	    if (f < fc)
+		f++;
 
-	for (; f <= fc; f++) {
-	    WCHAR model[LINE_LEN * 2 + 1 + 1];
-	    const WCHAR *targetOSVersion = NULL;
-	    if (f != 1) {
-		targetOSVersion = pSetupGetField(&c_man, f);
-		verbose_msg("targetOSVersion %S", targetOSVersion);
-	    }
-
-	    model[0] = 0;
-	    wcsncat_s(model, sizeof(model), models_section_name, _TRUNCATE);
-	    if (targetOSVersion) {
-		wcsncat_s(model, sizeof(model), L".", _TRUNCATE);
-		wcsncat_s(model, sizeof(model), targetOSVersion, _TRUNCATE);
-	    }
-
-	    verbose_msg("model %S", model);
-
-	    INFCONTEXT c_desc;
-	    ret = SetupFindFirstLineW(hinf, model, NULL, &c_desc);
-	    if (!ret)
-		continue;
-
-	    do {
-		verbose_msg("  desc 0 %S", pSetupGetField(&c_desc, 0));
-		verbose_msg("  desc 1 %S", pSetupGetField(&c_desc, 1));
-		verbose_msg("  desc 2 %S", pSetupGetField(&c_desc, 2));
-
-		if (SetupGetFieldCount(&c_desc) >= 2 && ((*hw_id) == NULL)) {
-		    *hw_id = _wide_to_utf8(pSetupGetField(&c_desc, 2));
-		    if ((*hw_id)[0] == '*')
-			(*hw_id)++;
+	    for (; f <= fc; f++) {
+		WCHAR model[LINE_LEN * 2 + 1 + 1];
+		const WCHAR *targetOSVersion = NULL;
+		if (f != 1) {
+		    targetOSVersion = pSetupGetField(&c_man, f);
+		    verbose_msg("targetOSVersion %S", targetOSVersion);
 		}
 
-		const WCHAR *inst = pSetupGetField(&c_desc, 1);
+		model[0] = 0;
+		wcsncat_s(model, sizeof(model), models_section_name, _TRUNCATE);
+		if (targetOSVersion) {
+		    wcsncat_s(model, sizeof(model), L".", _TRUNCATE);
+		    wcsncat_s(model, sizeof(model), targetOSVersion, _TRUNCATE);
+		}
 
-		for (unsigned int sec = 0; ; sec++) {
-		    ret = SetupEnumInfSectionsW(hinf, sec, bufW, sizeof(bufW),
-						NULL);
-		    if (!ret) {
-			if (GetLastError() == ERROR_NO_MORE_ITEMS)
-			    break;
-			err_msg("SetupEnumInfSectionsA");
-			continue;
+		verbose_msg("model %S", model);
+
+		INFCONTEXT c_desc;
+		ret = SetupFindFirstLineW(hinf, model, NULL, &c_desc);
+		if (!ret)
+		    continue;
+
+		do {
+		    verbose_msg("  desc 0 %S", pSetupGetField(&c_desc, 0));
+		    verbose_msg("  desc 1 %S", pSetupGetField(&c_desc, 1));
+		    verbose_msg("  desc 2 %S", pSetupGetField(&c_desc, 2));
+
+		    if (SetupGetFieldCount(&c_desc) >= 2 && ((*hw_id) == NULL)) {
+			*hw_id = _wide_to_utf8(pSetupGetField(&c_desc, 2));
+			if ((*hw_id)[0] == '*')
+			    (*hw_id)++;
 		    }
-		    verbose_msg("found section %S", bufW);
 
-		    if (wcsncmp(bufW, inst, wcslen(inst)))
-			continue;
-		    if (bufW[wcslen(inst)] && bufW[wcslen(inst)] != '.')
-			continue;
-		    verbose_msg("      install section %S", bufW);
+		    inst = realloc(inst, (nr_inst + 1) * sizeof(WCHAR *));
+		    if (!inst) {
+			err_msg("realloc(%d * sizeof(WCHAR *))", nr_inst + 1);
+			goto out;
+		    }
+		    inst[nr_inst++] = pSetupGetField(&c_desc, 1);
+		} while (SetupFindNextMatchLineW(&c_desc, NULL, &c_desc));
+	    }
+	} while (SetupFindNextMatchLineW(&c_man, NULL, &c_man));
 
-		    INFCONTEXT c_copy;
-		    ret = SetupFindFirstLineW(hinf, bufW, L"CopyFiles",
-					      &c_copy);
-		    if (!ret)
-			continue;
-		    verbose_msg("      CopyFiles in section %S", bufW);
+    for (unsigned int sec = 0; ; sec++) {
+	unsigned int i;
 
-		    do {
-			const WCHAR *copy = pSetupGetField(&c_copy, 1);
-
-			verbose_msg("sec %S copy file %S", bufW, copy);
-
-			if (copy[0] == '@') {
-			    cat_list[*cat_list_idx] = _wide_to_utf8(&copy[1]);
-			    verbose_msg("cat_list[%d] = %s", *cat_list_idx,
-					cat_list[*cat_list_idx]);
-			    (*cat_list_idx)++;
-			} else {
-			    INFCONTEXT c_files;
-			    ret = SetupFindFirstLineW(hinf, copy, NULL,
-						      &c_files);
-			    if (!ret)
-				continue;
-			    do {
-				cat_list[*cat_list_idx] =
-				    _wide_to_utf8(pSetupGetField(&c_files, 1));
-				verbose_msg("cat_list[%d] = %s", *cat_list_idx,
-					    cat_list[*cat_list_idx]);
-				(*cat_list_idx)++;
-			    } while (SetupFindNextMatchLineW(&c_files, NULL,
-							     &c_files));
-			}
-		    } while (SetupFindNextMatchLineW(&c_copy, L"CopyFiles",
-						     &c_copy));
-		}
-	    } while (SetupFindNextMatchLineW(&c_desc, NULL, &c_desc));
+	ret = SetupEnumInfSectionsW(hinf, sec, bufW, sizeof(bufW),
+				    NULL);
+	if (!ret) {
+	    if (GetLastError() == ERROR_NO_MORE_ITEMS)
+		break;
+	    err_msg("SetupEnumInfSectionsA");
+	    continue;
 	}
-    } while (SetupFindNextMatchLineW(&c_man, NULL, &c_man));
+	verbose_msg("found section %S", bufW);
+
+	for (i = 0; i < nr_inst; i++) {
+	    if (wcsncmp(bufW, inst[i], wcslen(inst[i])))
+		continue;
+	    if (bufW[wcslen(inst[i])] && bufW[wcslen(inst[i])] != '.')
+		continue;
+	    verbose_msg("      install section %S (from %S)", bufW, inst[i]);
+	    break;
+	}
+	if (i == nr_inst)
+	    continue;
+
+	INFCONTEXT c_copy;
+	ret = SetupFindFirstLineW(hinf, bufW, L"CopyFiles", &c_copy);
+	if (!ret)
+	    continue;
+	verbose_msg("      CopyFiles in section %S", bufW);
+
+	do {
+	    const WCHAR *copy = pSetupGetField(&c_copy, 1);
+
+	    verbose_msg("sec %S copy file %S", bufW, copy);
+
+	    if (copy[0] == '@') {
+		cat_list[*cat_list_idx] = _wide_to_utf8(&copy[1]);
+		verbose_msg("cat_list[%d] = %s", *cat_list_idx,
+			    cat_list[*cat_list_idx]);
+		(*cat_list_idx)++;
+	    } else {
+		INFCONTEXT c_files;
+		ret = SetupFindFirstLineW(hinf, copy, NULL, &c_files);
+		if (!ret)
+		    continue;
+		do {
+		    cat_list[*cat_list_idx] =
+			_wide_to_utf8(pSetupGetField(&c_files, 1));
+		    verbose_msg("cat_list[%d] = %s", *cat_list_idx,
+				cat_list[*cat_list_idx]);
+		    (*cat_list_idx)++;
+		} while (SetupFindNextMatchLineW(&c_files, NULL, &c_files));
+	    }
+	} while (SetupFindNextMatchLineW(&c_copy, L"CopyFiles", &c_copy));
+    }
 
     rc = 1;
   out:
